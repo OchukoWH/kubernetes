@@ -1047,6 +1047,12 @@ func printPod(pod *api.Pod, options printers.GenerateOptions) ([]metav1.TableRow
 		case container.State.Waiting != nil && len(container.State.Waiting.Reason) > 0 && container.State.Waiting.Reason != "PodInitializing":
 			reason = "Init:" + container.State.Waiting.Reason
 			initializing = true
+		case container.State.Waiting != nil && container.State.Waiting.Reason == "PodInitializing":
+			// Preserve compatibility with old kubelets that still emit PodInitializing
+			// for init containers. Map it to ContainerCreating so old and new
+			// kubelets produce the same user-facing status.
+			reason = "Init:ContainerCreating"
+			initializing = true
 		default:
 			reason = fmt.Sprintf("Init:%d/%d", i, len(pod.Spec.InitContainers))
 			initializing = true

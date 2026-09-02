@@ -4182,7 +4182,7 @@ func TestConvertToAPIContainerStatuses(t *testing.T) {
 					Name: "sidecar-1",
 					State: v1.ContainerState{
 						Waiting: &v1.ContainerStateWaiting{
-							Reason:  "PodInitializing",
+							Reason:  "ContainerCreating",
 							Message: "",
 						},
 					},
@@ -4225,6 +4225,53 @@ func TestConvertToAPIContainerStatuses(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConvertToAPIContainerStatusesInitDefault(t *testing.T) {
+	tCtx := ktesting.Init(t)
+	podWithInit := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod-with-init", UID: "uid"},
+		Spec: v1.PodSpec{
+			InitContainers: []v1.Container{{Name: "init-1", Image: "busybox"}},
+			Containers:     []v1.Container{{Name: "app", Image: "nginx"}},
+		},
+	}
+	emptyPodStatus := &kubecontainer.PodStatus{
+		ID:                podWithInit.UID,
+		Name:              podWithInit.Name,
+		Namespace:         podWithInit.Namespace,
+		ContainerStatuses: []*kubecontainer.Status{},
+	}
+	testKubelet := newTestKubelet(t, false)
+	defer testKubelet.Cleanup()
+	kl := testKubelet.kubelet
+	// Init container with no CRI status should be ContainerCreating (not PodInitializing)
+	initStatuses := kl.convertToAPIContainerStatuses(tCtx, podWithInit, emptyPodStatus, nil, podWithInit.Spec.InitContainers, nil, true, true, false)
+	assert.Equal(t, 1, len(initStatuses))
+	assert.NotNil(t, initStatuses[0].State.Waiting)
+	assert.Equal(t, "ContainerCreating", initStatuses[0].State.Waiting.Reason, "init container default should be ContainerCreating")
+	// Regular container during init should remain PodInitializing
+	appStatuses := kl.convertToAPIContainerStatuses(tCtx, podWithInit, emptyPodStatus, nil, podWithInit.Spec.Containers, nil, true, false, false)
+	assert.Equal(t, 1, len(appStatuses))
+	assert.NotNil(t, appStatuses[0].State.Waiting)
+	assert.Equal(t, "PodInitializing", appStatuses[0].State.Waiting.Reason, "regular container during init should be PodInitializing")
+	// Pod without init containers should be ContainerCreating for regular containers
+	podWithoutInit := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "pod-without-init", UID: "uid2"},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{Name: "app", Image: "nginx"}},
+		},
+	}
+	emptyPodStatus2 := &kubecontainer.PodStatus{
+		ID:                podWithoutInit.UID,
+		Name:              podWithoutInit.Name,
+		Namespace:         podWithoutInit.Namespace,
+		ContainerStatuses: []*kubecontainer.Status{},
+	}
+	regularStatuses := kl.convertToAPIContainerStatuses(tCtx, podWithoutInit, emptyPodStatus2, nil, podWithoutInit.Spec.Containers, nil, false, false, false)
+	assert.Equal(t, 1, len(regularStatuses))
+	assert.NotNil(t, regularStatuses[0].State.Waiting)
+	assert.Equal(t, "ContainerCreating", regularStatuses[0].State.Waiting.Reason)
 }
 
 // imageDigestRuntime is a simple wrapper that returns a fixed digest for image volumes

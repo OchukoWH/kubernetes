@@ -161,6 +161,51 @@ func TestDescribePodServiceAccount(t *testing.T) {
 	}
 }
 
+func TestDescribePodInitContainer(t *testing.T) {
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test",
+			Namespace: "default",
+		},
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{{Name: "init", Image: "busybox"}},
+			Containers:     []corev1.Container{{Name: "app", Image: "nginx"}},
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodPending,
+			InitContainerStatuses: []corev1.ContainerStatus{{
+				Name:  "init",
+				State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ContainerCreating"}},
+			}},
+		},
+	}
+	client := fake.NewClientset(pod)
+	c := &describeClient{T: t, Namespace: "default", Interface: client}
+	d := PodDescriber{c}
+	out, err := d.Describe("default", "test", DescriberSettings{ShowEvents: true})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "Init Containers:") {
+		t.Errorf("unexpected out missing Init Containers: %s", out)
+	}
+	if !strings.Contains(out, "ContainerCreating") {
+		t.Errorf("expected ContainerCreating in describe output, got: %s", out)
+	}
+	// Legacy PodInitializing should also be rendered (mapped by kubelet/printer)
+	pod.Status.InitContainerStatuses[0].State.Waiting.Reason = "PodInitializing"
+	client2 := fake.NewClientset(pod)
+	c = &describeClient{T: t, Namespace: "default", Interface: client2}
+	d = PodDescriber{c}
+	out, err = d.Describe("default", "test", DescriberSettings{ShowEvents: true})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "PodInitializing") {
+		t.Errorf("expected PodInitializing in describe output, got: %s", out)
+	}
+}
+
 func TestDescribePodEphemeralContainers(t *testing.T) {
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{

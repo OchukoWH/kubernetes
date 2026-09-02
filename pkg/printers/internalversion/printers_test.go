@@ -1529,6 +1529,120 @@ func TestPrintPod(t *testing.T) {
 			[]metav1.TableRow{{Cells: []interface{}{"test11", "0/1", "Running", "4 (20s ago)", "<unknown>"}}},
 		},
 		{
+			// Test init container waiting with PodInitializing (legacy kubelet) should map to ContainerCreating for compatibility
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "testInitPodInitializing"},
+				Spec:       api.PodSpec{InitContainers: make([]api.Container, 1), Containers: make([]api.Container, 1)},
+				Status: api.PodStatus{
+					Phase: "Pending",
+					InitContainerStatuses: []api.ContainerStatus{
+						{State: api.ContainerState{Waiting: &api.ContainerStateWaiting{Reason: "PodInitializing"}}},
+					},
+				},
+			},
+			[]metav1.TableRow{{Cells: []interface{}{"testInitPodInitializing", "0/1", "Init:ContainerCreating", "0", "<unknown>"}}},
+		},
+		{
+			// Test init container waiting with ContainerCreating
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "testInitContainerCreating"},
+				Spec:       api.PodSpec{InitContainers: make([]api.Container, 1), Containers: make([]api.Container, 1)},
+				Status: api.PodStatus{
+					Phase: "Pending",
+					InitContainerStatuses: []api.ContainerStatus{
+						{State: api.ContainerState{Waiting: &api.ContainerStateWaiting{Reason: "ContainerCreating"}}},
+					},
+				},
+			},
+			[]metav1.TableRow{{Cells: []interface{}{"testInitContainerCreating", "0/1", "Init:ContainerCreating", "0", "<unknown>"}}},
+		},
+		{
+			// Test init container waiting with ErrImagePull
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "testInitErrImagePull"},
+				Spec:       api.PodSpec{InitContainers: make([]api.Container, 1), Containers: make([]api.Container, 1)},
+				Status: api.PodStatus{
+					Phase: "Pending",
+					InitContainerStatuses: []api.ContainerStatus{
+						{State: api.ContainerState{Waiting: &api.ContainerStateWaiting{Reason: "ErrImagePull"}}},
+					},
+				},
+			},
+			[]metav1.TableRow{{Cells: []interface{}{"testInitErrImagePull", "0/1", "Init:ErrImagePull", "0", "<unknown>"}}},
+		},
+		{
+			// Test init container waiting with ImagePullBackOff
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "testInitImagePullBackOff"},
+				Spec:       api.PodSpec{InitContainers: make([]api.Container, 1), Containers: make([]api.Container, 1)},
+				Status: api.PodStatus{
+					Phase: "Pending",
+					InitContainerStatuses: []api.ContainerStatus{
+						{State: api.ContainerState{Waiting: &api.ContainerStateWaiting{Reason: "ImagePullBackOff"}}},
+					},
+				},
+			},
+			[]metav1.TableRow{{Cells: []interface{}{"testInitImagePullBackOff", "0/1", "Init:ImagePullBackOff", "0", "<unknown>"}}},
+		},
+		{
+			// Test init container waiting with CrashLoopBackOff
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "testInitCrashLoopBackOff"},
+				Spec:       api.PodSpec{InitContainers: make([]api.Container, 1), Containers: make([]api.Container, 1)},
+				Status: api.PodStatus{
+					Phase: "Pending",
+					InitContainerStatuses: []api.ContainerStatus{
+						{State: api.ContainerState{Waiting: &api.ContainerStateWaiting{Reason: "CrashLoopBackOff"}}},
+					},
+				},
+			},
+			[]metav1.TableRow{{Cells: []interface{}{"testInitCrashLoopBackOff", "0/1", "Init:CrashLoopBackOff", "0", "<unknown>"}}},
+		},
+		{
+			// Test init container running (should show Init:0/1)
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "testInitRunning"},
+				Spec:       api.PodSpec{InitContainers: make([]api.Container, 1), Containers: make([]api.Container, 1)},
+				Status: api.PodStatus{
+					Phase: "Pending",
+					InitContainerStatuses: []api.ContainerStatus{
+						{State: api.ContainerState{Running: &api.ContainerStateRunning{}}},
+					},
+				},
+			},
+			[]metav1.TableRow{{Cells: []interface{}{"testInitRunning", "0/1", "Init:0/1", "0", "<unknown>"}}},
+		},
+		{
+			// Test multiple init containers: first completed, second is ContainerCreating, third not started
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "testInitMultiple"},
+				Spec:       api.PodSpec{InitContainers: make([]api.Container, 3), Containers: make([]api.Container, 1)},
+				Status: api.PodStatus{
+					Phase: "Pending",
+					InitContainerStatuses: []api.ContainerStatus{
+						{State: api.ContainerState{Terminated: &api.ContainerStateTerminated{ExitCode: 0}}},
+						{State: api.ContainerState{Waiting: &api.ContainerStateWaiting{Reason: "ContainerCreating"}}},
+						{State: api.ContainerState{Waiting: &api.ContainerStateWaiting{Reason: "PodInitializing"}}},
+					},
+				},
+			},
+			[]metav1.TableRow{{Cells: []interface{}{"testInitMultiple", "0/1", "Init:ContainerCreating", "0", "<unknown>"}}},
+		},
+		{
+			// Test init container with ErrImagePull takes precedence over ContainerCreating
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "testInitErrPrecedence"},
+				Spec:       api.PodSpec{InitContainers: make([]api.Container, 1), Containers: make([]api.Container, 1)},
+				Status: api.PodStatus{
+					Phase: "Pending",
+					InitContainerStatuses: []api.ContainerStatus{
+						{State: api.ContainerState{Waiting: &api.ContainerStateWaiting{Reason: "ErrImagePull"}}},
+					},
+				},
+			},
+			[]metav1.TableRow{{Cells: []interface{}{"testInitErrPrecedence", "0/1", "Init:ErrImagePull", "0", "<unknown>"}}},
+		},
+		{
 			// Test pod has 1 container that restarted 5d ago
 			api.Pod{
 				ObjectMeta: metav1.ObjectMeta{Name: "test12"},

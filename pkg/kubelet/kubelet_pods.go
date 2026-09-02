@@ -2529,7 +2529,7 @@ func (kl *Kubelet) convertToAPIContainerStatuses(ctx context.Context, pod *v1.Po
 	// Set all container statuses to default waiting state
 	statuses := make(map[string]*v1.ContainerStatus, len(containers))
 	defaultWaitingState := v1.ContainerState{Waiting: &v1.ContainerStateWaiting{Reason: ContainerCreating}}
-	if hasInitContainers {
+	if hasInitContainers && !isInitContainer {
 		defaultWaitingState = v1.ContainerState{Waiting: &v1.ContainerStateWaiting{Reason: PodInitializing}}
 	}
 
@@ -2638,7 +2638,7 @@ func (kl *Kubelet) convertToAPIContainerStatuses(ctx context.Context, pod *v1.Po
 		// If the status we're about to write indicates the default, the Waiting status will force this pod back into Pending.
 		// That isn't true, we know the pod was previously running.
 		isDefaultWaitingStatus := status.State.Waiting != nil && status.State.Waiting.Reason == ContainerCreating
-		if hasInitContainers {
+		if hasInitContainers && !isInitContainer {
 			isDefaultWaitingStatus = status.State.Waiting != nil && status.State.Waiting.Reason == PodInitializing
 		}
 		if !isDefaultWaitingStatus {

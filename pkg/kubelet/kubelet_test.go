@@ -2211,10 +2211,10 @@ func TestGenerateAPIPodStatusWithReasonCache(t *testing.T) {
 			},
 			expectedInitState: map[string]v1.ContainerState{
 				"without-old-record": {Waiting: &v1.ContainerStateWaiting{
-					Reason: PodInitializing,
+					Reason: ContainerCreating,
 				}},
 				"with-old-record": {Waiting: &v1.ContainerStateWaiting{
-					Reason: PodInitializing,
+					Reason: ContainerCreating,
 				}},
 			},
 			expectedLastTerminationState: map[string]v1.ContainerState{

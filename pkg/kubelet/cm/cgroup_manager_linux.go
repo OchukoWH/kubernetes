@@ -495,3 +495,21 @@ func readCgroupMemoryConfig(cgroupPath string, memLimitFile string) (*ResourceCo
 	return &ResourceConfig{Memory: &mLim}, nil
 
 }
+
+// readCgroupMemoryQoSConfig reads the MemoryQoS protection settings
+// (memory.low, memory.min, memory.high) of a cgroup v2 cgroup.
+// Unset values ("0" for protection, "max" for throttling) are omitted so the
+// result compares equal to a config that sets no Unified entries.
+func readCgroupMemoryQoSConfig(cgroupPath string) map[string]string {
+	unified := map[string]string{}
+	if v, err := fscommon.GetCgroupParamString(cgroupPath, Cgroup2MemoryLow); err == nil && v != "" && v != "0" {
+		unified[Cgroup2MemoryLow] = v
+	}
+	if v, err := fscommon.GetCgroupParamString(cgroupPath, Cgroup2MemoryMin); err == nil && v != "" && v != "0" {
+		unified[Cgroup2MemoryMin] = v
+	}
+	if v, err := fscommon.GetCgroupParamString(cgroupPath, Cgroup2MemoryHigh); err == nil && v != "" && v != "max" {
+		unified[Cgroup2MemoryHigh] = v
+	}
+	return unified
+}

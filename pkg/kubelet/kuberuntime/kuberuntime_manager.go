@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -989,11 +990,17 @@ func (m *kubeGenericRuntimeManager) doPodResizeAction(ctx context.Context, pod *
 			}
 		case v1.ResourceMemory:
 			if !setLimitValue {
-				// Memory requests aren't written to cgroups.
-				return nil
+				// Memory requests don't set memory.max, but MemoryQoS derives
+				// pod-level memory.low/memory.min from the request, so a
+				// request-only resize must still rewrite the Unified settings.
+				if len(podResources.Unified) == 0 {
+					return nil
+				}
+				resizedResources.Unified = podResources.Unified
+			} else {
+				resizedResources.Memory = podResources.Memory
+				resizedResources.Unified = podResources.Unified
 			}
-			resizedResources.Memory = podResources.Memory
-			resizedResources.Unified = podResources.Unified
 		}
 
 		// Notify the runtime first. If this fails, the runtime has rejected the resize.
@@ -1101,9 +1108,28 @@ func (m *kubeGenericRuntimeManager) doPodResizeAction(ctx context.Context, pod *
 			// TODO(#128675): This does not support removing limits.
 			podResources.Memory = currentPodMemoryConfig.Memory
 		}
+		// Pod-level memory protection (memory.low/memory.min under TieredReservation)
+		// derives from the request, so a request-only resize leaves the limit-driven
+		// update below with nothing to do. Rewrite the Unified settings directly,
+		// growing protection before resizing containers and shrinking it after.
+		podUnifiedChanged := !maps.Equal(podResources.Unified, currentPodMemoryConfig.Unified)
+		memoryLimitsUnchanged := *podResources.Memory == *currentPodMemoryConfig.Memory
+		podProtectionIncreased := unifiedProtectionSum(podResources.Unified) >= unifiedProtectionSum(currentPodMemoryConfig.Unified)
+		if podUnifiedChanged && memoryLimitsUnchanged && podProtectionIncreased {
+			if err := setPodCgroupConfig(logger, v1.ResourceMemory, false); err != nil {
+				resizeResult.Fail(kubecontainer.ErrResizePodInPlace, err.Error())
+				return resizeResult
+			}
+		}
 		if errResize := resizeContainers(v1.ResourceMemory, int64(*currentPodMemoryConfig.Memory), *podResources.Memory, 0, 0); errResize != nil {
 			resizeResult.Fail(kubecontainer.ErrResizePodInPlace, errResize.Error())
 			return resizeResult
+		}
+		if podUnifiedChanged && memoryLimitsUnchanged && !podProtectionIncreased {
+			if err := setPodCgroupConfig(logger, v1.ResourceMemory, false); err != nil {
+				resizeResult.Fail(kubecontainer.ErrResizePodInPlace, err.Error())
+				return resizeResult
+			}
 		}
 	}
 

@@ -134,7 +134,16 @@ func (c *cgroupV2impl) getCgroupCPUConfig(cgroupPath string) (*ResourceConfig, e
 }
 
 func (c *cgroupV2impl) getCgroupMemoryConfig(cgroupPath string) (*ResourceConfig, error) {
-	return readCgroupMemoryConfig(cgroupPath, cgroupv2MemLimitFile)
+	rc, err := readCgroupMemoryConfig(cgroupPath, cgroupv2MemLimitFile)
+	if err != nil {
+		return nil, err
+	}
+	// Surface the MemoryQoS settings derived from the memory request, so
+	// in-place resize can detect request-only protection changes.
+	if unified := readCgroupMemoryQoSConfig(cgroupPath); len(unified) > 0 {
+		rc.Unified = unified
+	}
+	return rc, nil
 }
 
 // getSupportedUnifiedControllers returns a set of supported controllers when running on cgroup v2

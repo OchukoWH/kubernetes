@@ -412,9 +412,12 @@ func mergeResourceConfig(source, update *cm.ResourceConfig) *cm.ResourceConfig {
 		}
 	}
 
-	if update.Unified != nil {
-		if merged.Unified == nil {
-			merged.Unified = make(map[string]string)
+	if source.Unified != nil || update.Unified != nil {
+		// Copy into a fresh map: merging into source.Unified would mutate the
+		// caller's config, e.g. the desired pod resources during resize.
+		merged.Unified = make(map[string]string, len(source.Unified)+len(update.Unified))
+		for k, v := range source.Unified {
+			merged.Unified[k] = v
 		}
 		for k, v := range update.Unified {
 			merged.Unified[k] = v
@@ -422,6 +425,22 @@ func mergeResourceConfig(source, update *cm.ResourceConfig) *cm.ResourceConfig {
 	}
 
 	return &merged
+}
+
+// unifiedProtectionSum returns the sum of the numeric values in a Unified
+// cgroup map. It detects request-derived protection changes (e.g. pod-level
+// memory.low/memory.min under TieredReservation) across in-place resizes.
+// Non-numeric values such as "max" are ignored.
+func unifiedProtectionSum(unified map[string]string) int64 {
+	var sum int64
+	for _, v := range unified {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			continue
+		}
+		sum += n
+	}
+	return sum
 }
 
 func convertResourceConfigToLinuxContainerResources(rc *cm.ResourceConfig) *runtimeapi.LinuxContainerResources {
